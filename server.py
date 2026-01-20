@@ -22,27 +22,105 @@ def determine_winner(c1, c2):
     return "LOSE", "WIN"
 
 def handle_game(p1, p2):
+    requeued_p1 = False
+    requeued_p2 = False
+
     try:
-        # Bắt đầu ván chơi
-        p1.sendall(b"START\n")
-        p2.sendall(b"START\n")
+        while True:
+            # Bắt đầu ván chơi
+            try:
+                p1.sendall(b"START\n")
+                p2.sendall(b"START\n")
+            except Exception:
+                break
 
-        c1 = p1.recv(1024).decode().strip()
-        c2 = p2.recv(1024).decode().strip()
+            try:
+                c1 = p1.recv(1024).decode().strip()
+            except Exception:
+                c1 = None
 
-        if not c1 or not c2:
-            return
+            try:
+                c2 = p2.recv(1024).decode().strip()
+            except Exception:
+                c2 = None
 
-        r1, r2 = determine_winner(c1, c2)
+            if not c1 or not c2:
+                break
 
-        p1.sendall((r1 + "\n").encode())
-        p2.sendall((r2 + "\n").encode())
+            r1, r2 = determine_winner(c1, c2)
 
-        p1.sendall(b"GOODBYE\n")
-        p2.sendall(b"GOODBYE\n")
+            try:
+                p1.sendall((r1 + "\n").encode())
+                p2.sendall((r2 + "\n").encode())
+            except Exception:
+                break
+
+            # Hỏi chơi lại
+            try:
+                p1.sendall(b"PLAY_AGAIN?\n")
+                p2.sendall(b"PLAY_AGAIN?\n")
+            except Exception:
+                break
+
+            try:
+                a1 = p1.recv(1024).decode().strip()
+            except Exception:
+                a1 = "QUIT"
+
+            try:
+                a2 = p2.recv(1024).decode().strip()
+            except Exception:
+                a2 = "QUIT"
+
+            # Cả hai muốn chơi tiếp
+            if a1 == "PLAY" and a2 == "PLAY":
+                continue
+
+            # Gửi goodbye
+            if a1 != "PLAY":
+                try:
+                    p1.sendall(b"GOODBYE\n")
+                except Exception:
+                    pass
+
+            if a2 != "PLAY":
+                try:
+                    p2.sendall(b"GOODBYE\n")
+                except Exception:
+                    pass
+
+            # Requeue người còn chơi
+            if a1 == "PLAY" and a2 != "PLAY":
+                with lock:
+                    clients.append(p1)
+                    requeued_p1 = True
+                try:
+                    p1.sendall(b"WAIT\n")
+                except Exception:
+                    requeued_p1 = False
+
+            if a2 == "PLAY" and a1 != "PLAY":
+                with lock:
+                    clients.append(p2)
+                    requeued_p2 = True
+                try:
+                    p2.sendall(b"WAIT\n")
+                except Exception:
+                    requeued_p2 = False
+
+            break
     finally:
-        p1.close()
-        p2.close()
+        if not requeued_p1:
+            try:
+                p1.close()
+            except Exception:
+                pass
+
+        if not requeued_p2:
+            try:
+                p2.close()
+            except Exception:
+                pass
 
 def handle_client(client):
     client.sendall(b"WAIT\n")
