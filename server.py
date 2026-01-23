@@ -160,7 +160,7 @@ def start_tcp_server(host, port):
 
 
 # ---------------------- WebSocket (Cloudflare-friendly) ----------------------
-DEFAULT_WS_PORT = 9000
+DEFAULT_WS_PORT = 9100
 
 ws_clients = []
 ws_lock = None  # will be asyncio.Lock when server starts

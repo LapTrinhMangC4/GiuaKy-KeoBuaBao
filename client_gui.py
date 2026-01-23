@@ -4,7 +4,7 @@ import threading
 import asyncio
 import websockets
 
-WS_URL = "wss://bolt-extensions-stamp-flooring.trycloudflare.com"
+WS_URL = "wss://rick-supply-iso-commodities.trycloudflare.com"
 
 
 class RPSClientGUI:
