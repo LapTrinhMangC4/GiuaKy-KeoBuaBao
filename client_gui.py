@@ -10,89 +10,217 @@ PORT = 5555
 class RPSClientGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Rock Paper Scissors")
-        self.root.geometry("350x300")
+        self.root.title("🎮 Rock Paper Scissors")
+        self.root.geometry("500x600")
+        self.root.configure(bg="#1a1a2e")
+        self.root.resizable(False, False)
 
         # ensure proper cleanup when user clicks the window X
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            self.client.connect((SERVER_IP, PORT))
-        except Exception as e:
-            messagebox.showerror("Connection Error", f"Cannot connect to server: {e}")
-            root.destroy()
-            return
+        self.connected = False
+        self.retry_button = None
 
-        # top status frame
-        self.top_frame = tk.Frame(root, bg="#2c3e50")
-        self.top_frame.pack(fill="x")
+        # Header
+        header_frame = tk.Frame(root, bg="#16213e", height=100)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        title_label = tk.Label(
+            header_frame, 
+            text="✊ ✋ ✌️",
+            font=("Segoe UI Emoji", 36),
+            bg="#16213e",
+            fg="#e94560"
+        )
+        title_label.pack(pady=(10, 0))
+        
+        subtitle_label = tk.Label(
+            header_frame,
+            text="ROCK PAPER SCISSORS",
+            font=("Arial", 18, "bold"),
+            bg="#16213e",
+            fg="#ffffff"
+        )
+        subtitle_label.pack(pady=(0, 10))
 
-        self.title_label = tk.Label(self.top_frame, text="Rock Paper Scissors", bg="#2c3e50", fg="white", font=("Helvetica", 16, "bold"))
-        self.title_label.pack(pady=10)
+        # Status container
+        status_container = tk.Frame(root, bg="#0f3460", bd=0)
+        status_container.pack(pady=20, padx=40, fill="x")
+        
+        self.status_label = tk.Label(
+            status_container,
+            text="Waiting for opponent...",
+            font=("Arial", 14),
+            bg="#0f3460",
+            fg="#ffffff",
+            pady=15
+        )
+        self.status_label.pack()
 
-        self.status_label = tk.Label(root, text="Waiting for opponent...", font=("Arial", 12), fg="#34495e")
-        self.status_label.pack(pady=8)
+        # Result label with animation-ready styling
+        self.result_label = tk.Label(
+            root,
+            text="",
+            font=("Arial", 16, "bold"),
+            bg="#1a1a2e",
+            fg="#00ff88",
+            pady=10
+        )
+        self.result_label.pack()
 
-        # result label
-        self.result_label = tk.Label(root, text="", font=("Arial", 12), fg="#16a085")
-        self.result_label.pack(pady=4)
+        # Game buttons frame
+        buttons_frame = tk.Frame(root, bg="#1a1a2e")
+        buttons_frame.pack(pady=30)
 
-        # buttons frame
-        self.frame = tk.Frame(root)
-        self.frame.pack(pady=10)
+        # Button styling
+        btn_configs = {
+            "ROCK": {"emoji": "✊", "color": "#e94560", "hover": "#d63651"},
+            "PAPER": {"emoji": "✋", "color": "#4a90e2", "hover": "#3a7bc8"},
+            "SCISSORS": {"emoji": "✌️", "color": "#f39c12", "hover": "#da8c0f"}
+        }
 
-        btn_style = {"width": 12, "height": 2, "bg": "#ecf0f1", "fg": "#2c3e50", "font": ("Arial", 10, "bold")}
+        self.buttons = {}
+        for idx, (choice, config) in enumerate(btn_configs.items()):
+            btn_frame = tk.Frame(buttons_frame, bg=config["color"], bd=0)
+            btn_frame.grid(row=0, column=idx, padx=15)
+            
+            # Emoji label
+            emoji_label = tk.Label(
+                btn_frame,
+                text=config["emoji"],
+                font=("Segoe UI Emoji", 48),
+                bg=config["color"],
+                fg="#ffffff"
+            )
+            emoji_label.pack(pady=(15, 5))
+            
+            # Choice button
+            btn = tk.Button(
+                btn_frame,
+                text=choice,
+                font=("Arial", 12, "bold"),
+                bg=config["color"],
+                fg="#ffffff",
+                bd=0,
+                padx=20,
+                pady=10,
+                cursor="hand2",
+                command=lambda c=choice: self.send_choice(c),
+                activebackground=config["hover"],
+                activeforeground="#ffffff"
+            )
+            btn.pack(pady=(0, 15))
+            
+            self.buttons[choice] = {"btn": btn, "frame": btn_frame, "config": config}
+            
+            # Hover effects
+            btn.bind("<Enter>", lambda e, b=btn, cfg=config: b.config(bg=cfg["hover"]))
+            btn.bind("<Leave>", lambda e, b=btn, cfg=config: b.config(bg=cfg["color"]))
 
-        self.btn_rock = tk.Button(self.frame, text="ROCK", command=lambda: self.send_choice("ROCK"), **btn_style)
-        self.btn_paper = tk.Button(self.frame, text="PAPER", command=lambda: self.send_choice("PAPER"), **btn_style)
-        self.btn_scissors = tk.Button(self.frame, text="SCISSORS", command=lambda: self.send_choice("SCISSORS"), **btn_style)
+        # Rematch frame
+        self.rematch_frame = tk.Frame(root, bg="#1a1a2e")
+        
+        rematch_btn_frame = tk.Frame(self.rematch_frame, bg="#1a1a2e")
+        rematch_btn_frame.pack(pady=10)
+        
+        self.btn_play_again = tk.Button(
+            rematch_btn_frame,
+            text="🔄 Play Again",
+            font=("Arial", 12, "bold"),
+            bg="#00d9ff",
+            fg="#1a1a2e",
+            bd=0,
+            padx=25,
+            pady=12,
+            cursor="hand2",
+            command=self.send_play,
+            activebackground="#00b8d4"
+        )
+        self.btn_play_again.pack(side="left", padx=10)
+        
+        self.btn_quit = tk.Button(
+            rematch_btn_frame,
+            text="❌ Quit",
+            font=("Arial", 12, "bold"),
+            bg="#e94560",
+            fg="#ffffff",
+            bd=0,
+            padx=25,
+            pady=12,
+            cursor="hand2",
+            command=self.send_quit,
+            activebackground="#d63651"
+        )
+        self.btn_quit.pack(side="left", padx=10)
 
-        self.btn_rock.grid(row=0, column=0, padx=6)
-        self.btn_paper.grid(row=0, column=1, padx=6)
-        self.btn_scissors.grid(row=0, column=2, padx=6)
+        # Footer
+        footer_label = tk.Label(
+            root,
+            text="Good luck! 🍀",
+            font=("Arial", 10),
+            bg="#1a1a2e",
+            fg="#888888"
+        )
+        footer_label.pack(side="bottom", pady=20)
 
-        # play again / quit frame (hidden until needed)
-        self.rematch_frame = tk.Frame(root)
-        self.btn_play_again = tk.Button(self.rematch_frame, text="Play Again", width=12, height=1, bg="#27ae60", fg="white", command=self.send_play)
-        self.btn_quit = tk.Button(self.rematch_frame, text="Quit", width=12, height=1, bg="#c0392b", fg="white", command=self.send_quit)
-        self.btn_play_again.pack(side="left", padx=8)
-        self.btn_quit.pack(side="left", padx=8)
-
+        self.connect_to_server()
         self.disable_buttons()
 
-        threading.Thread(target=self.listen_server, daemon=True).start()
+    def connect_to_server(self):
+        try:
+            self.client.connect((SERVER_IP, PORT))
+            self.connected = True
+            self.status_label.config(text="Connected! Waiting for opponent...")
+            if self.retry_button:
+                self.retry_button.pack_forget()
+                self.retry_button = None
+            threading.Thread(target=self.listen_server, daemon=True).start()
+        except Exception as e:
+            self.connected = False
+            self.status_label.config(text="Cannot connect to server. Click Retry to try again.")
+            if not self.retry_button:
+                self.retry_button = tk.Button(
+                    self.status_container,
+                    text="🔄 Retry Connection",
+                    font=("Arial", 12, "bold"),
+                    bg="#e94560",
+                    fg="#ffffff",
+                    bd=0,
+                    padx=20,
+                    pady=10,
+                    cursor="hand2",
+                    command=self.connect_to_server
+                )
+                self.retry_button.pack(pady=10)
 
     def disable_buttons(self):
-        self.btn_rock.config(state="disabled")
-        self.btn_paper.config(state="disabled")
-        self.btn_scissors.config(state="disabled")
-        # hide rematch frame until asked
+        for choice_data in self.buttons.values():
+            choice_data["btn"].config(state="disabled", cursor="arrow")
         try:
             self.rematch_frame.pack_forget()
         except Exception:
             pass
 
     def enable_buttons(self):
-        self.btn_rock.config(state="normal")
-        self.btn_paper.config(state="normal")
-        self.btn_scissors.config(state="normal")
+        for choice_data in self.buttons.values():
+            choice_data["btn"].config(state="normal", cursor="hand2")
 
     def send_choice(self, choice):
+        if not self.connected:
+            return
         try:
             self.client.sendall((choice + "\n").encode())
         except Exception:
-            # if send fails, notify user
             self.root.after(0, lambda: messagebox.showerror("Error", "Failed to send choice to server."))
             return
         self.disable_buttons()
-        self.status_label.config(text=f"You chose {choice}")
+        self.status_label.config(text=f"You chose {choice} ⏳")
 
     def _handle_msg(self, msg):
         if msg == "WAIT":
-            self.status_label.config(text="Waiting for opponent...")
+            self.status_label.config(text="Waiting for opponent... ⏳")
             self.result_label.config(text="")
-            # ensure buttons are disabled and rematch options hidden when requeued
             self.disable_buttons()
             try:
                 if self.rematch_frame.winfo_ismapped():
@@ -100,75 +228,75 @@ class RPSClientGUI:
             except Exception:
                 pass
         elif msg == "START":
-            self.status_label.config(text="Choose your move")
+            self.status_label.config(text="Choose your move! 🎯")
             self.result_label.config(text="")
             self.enable_buttons()
-            # hide rematch options when a new round starts
             try:
                 if self.rematch_frame.winfo_ismapped():
                     self.rematch_frame.pack_forget()
             except Exception:
                 pass
-        elif msg in ["WIN", "LOSE", "DRAW"]:
-            self.result_label.config(text=f"Result: {msg}")
-            messagebox.showinfo("Game Result", msg)
-            # after showing result, wait for server's PLAY_AGAIN? prompt
+        elif msg == "WIN":
+            self.result_label.config(text="🎉 YOU WIN! 🎉", fg="#00ff88")
+            messagebox.showinfo("Game Result", "Congratulations! You won! 🏆")
+        elif msg == "LOSE":
+            self.result_label.config(text="😔 YOU LOSE", fg="#e94560")
+            messagebox.showinfo("Game Result", "Better luck next time! 💪")
+        elif msg == "DRAW":
+            self.result_label.config(text="🤝 IT'S A DRAW!", fg="#f39c12")
+            messagebox.showinfo("Game Result", "It's a tie! Try again! 🔄")
         elif msg == "PLAY_AGAIN?":
-            # show play again / quit options (avoid packing multiple times)
             try:
                 if not self.rematch_frame.winfo_ismapped():
-                    self.rematch_frame.pack(pady=8)
+                    self.rematch_frame.pack(pady=20)
             except Exception:
                 try:
-                    self.rematch_frame.pack(pady=8)
+                    self.rematch_frame.pack(pady=20)
                 except Exception:
                     pass
         elif msg == "GOODBYE":
-            messagebox.showinfo("Server", "Opponent left the game. Connection will close.")
+            messagebox.showinfo("Server", "Opponent left the game. Connection will close. 👋")
             try:
                 self.client.close()
             except Exception:
                 pass
             self.disable_buttons()
-            self.status_label.config(text="Disconnected")
+            self.status_label.config(text="Disconnected ❌")
 
     def listen_server(self):
         while True:
             try:
                 data = self.client.recv(1024)
                 if not data:
-                    # connection closed
-                    self.root.after(0, lambda: self.status_label.config(text="Disconnected from server"))
+                    self.root.after(0, lambda: self.status_label.config(text="Disconnected from server ❌"))
                     try:
                         self.client.close()
                     except Exception:
                         pass
                     break
 
-                # handle possible multiple messages separated by newline
                 parts = data.decode().splitlines()
                 for part in parts:
                     msg = part.strip()
                     if not msg:
                         continue
-                    # schedule UI updates on main thread
                     self.root.after(0, self._handle_msg, msg)
             except Exception:
                 break
 
     def send_play(self):
+        if not self.connected:
+            return
         try:
             self.client.sendall(b"PLAY\n")
         except Exception:
             pass
-        # hide rematch options until asked again
         try:
             self.rematch_frame.pack_forget()
         except Exception:
             pass
 
     def send_quit(self):
-        # user-initiated quit: notify server, close socket, and destroy window
         try:
             self.client.sendall(b"QUIT\n")
         except Exception:
@@ -178,166 +306,15 @@ class RPSClientGUI:
         except Exception:
             pass
         self.disable_buttons()
-        self.status_label.config(text="You left the game")
+        self.status_label.config(text="You left the game 👋")
         try:
             self.root.destroy()
         except Exception:
             pass
 
     def on_closing(self):
-        # same behavior as clicking Quit
         self.send_quit()
 
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = RPSClientGUI(root)
-    root.mainloop()
-import socket
-import threading
-import tkinter as tk
-from tkinter import messagebox
-
-SERVER_IP = "127.0.0.1"
-PORT = 5555
-
-class RPSClientGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Rock Paper Scissors")
-        self.root.geometry("350x300")
-
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.connect((SERVER_IP, PORT))
-
-        self.label = tk.Label(root, text="Waiting for opponent...", font=("Arial", 14))
-        self.label.pack(pady=20)
-
-        self.frame = tk.Frame(root)
-        self.frame.pack()
-
-        self.btn_rock = tk.Button(self.frame, text="ROCK", width=10,
-                                  command=lambda: self.send_choice("ROCK"))
-        self.btn_paper = tk.Button(self.frame, text="PAPER", width=10,
-                                   command=lambda: self.send_choice("PAPER"))
-        self.btn_scissors = tk.Button(self.frame, text="SCISSORS", width=10,
-                                      command=lambda: self.send_choice("SCISSORS"))
-
-        self.btn_rock.grid(row=0, column=0, padx=5)
-        self.btn_paper.grid(row=0, column=1, padx=5)
-        self.btn_scissors.grid(row=0, column=2, padx=5)
-
-        self.disable_buttons()
-
-        threading.Thread(target=self.listen_server, daemon=True).start()
-
-    def disable_buttons(self):
-        self.btn_rock.config(state="disabled")
-        self.btn_paper.config(state="disabled")
-        self.btn_scissors.config(state="disabled")
-
-    def enable_buttons(self):
-        self.btn_rock.config(state="normal")
-        self.btn_paper.config(state="normal")
-        self.btn_scissors.config(state="normal")
-
-    def send_choice(self, choice):
-        self.client.sendall((choice + "\n").encode())
-        self.disable_buttons()
-        self.label.config(text=f"You chose {choice}")
-
-    def listen_server(self):
-        while True:
-            try:
-                msg = self.client.recv(1024).decode().strip()
-
-                if msg == "WAIT":
-                    self.label.config(text="Waiting for opponent...")
-                elif msg == "START":
-                    self.label.config(text="Choose your move")
-                    self.enable_buttons()
-                elif msg in ["WIN", "LOSE", "DRAW"]:
-                    self.label.config(text=f"Result: {msg}")
-                    messagebox.showinfo("Game Result", msg)
-                    self.client.close()
-                    break
-            except:
-                break
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = RPSClientGUI(root)
-    root.mainloop()
-import socket
-import threading
-import tkinter as tk
-from tkinter import messagebox
-
-SERVER_IP = "127.0.0.1"
-PORT = 5555
-
-class RPSClientGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Rock Paper Scissors")
-        self.root.geometry("350x300")
-
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.connect((SERVER_IP, PORT))
-
-        self.label = tk.Label(root, text="Waiting for opponent...", font=("Arial", 14))
-        self.label.pack(pady=20)
-
-        self.frame = tk.Frame(root)
-        self.frame.pack()
-
-        self.btn_rock = tk.Button(self.frame, text="ROCK", width=10,
-                                  command=lambda: self.send_choice("ROCK"))
-        self.btn_paper = tk.Button(self.frame, text="PAPER", width=10,
-                                   command=lambda: self.send_choice("PAPER"))
-        self.btn_scissors = tk.Button(self.frame, text="SCISSORS", width=10,
-                                      command=lambda: self.send_choice("SCISSORS"))
-
-        self.btn_rock.grid(row=0, column=0, padx=5)
-        self.btn_paper.grid(row=0, column=1, padx=5)
-        self.btn_scissors.grid(row=0, column=2, padx=5)
-
-        self.disable_buttons()
-
-        threading.Thread(target=self.listen_server, daemon=True).start()
-
-    def disable_buttons(self):
-        self.btn_rock.config(state="disabled")
-        self.btn_paper.config(state="disabled")
-        self.btn_scissors.config(state="disabled")
-
-    def enable_buttons(self):
-        self.btn_rock.config(state="normal")
-        self.btn_paper.config(state="normal")
-        self.btn_scissors.config(state="normal")
-
-    def send_choice(self, choice):
-        self.client.sendall((choice + "\n").encode())
-        self.disable_buttons()
-        self.label.config(text=f"You chose {choice}")
-
-    def listen_server(self):
-        while True:
-            try:
-                msg = self.client.recv(1024).decode().strip()
-
-                if msg == "WAIT":
-                    self.label.config(text="Waiting for opponent...")
-                elif msg == "START":
-                    self.label.config(text="Choose your move")
-                    self.enable_buttons()
-                elif msg in ["WIN", "LOSE", "DRAW"]:
-                    self.label.config(text=f"Result: {msg}")
-                    messagebox.showinfo("Game Result", msg)
-                    self.client.close()
-                    break
-            except:
-                break
 
 if __name__ == "__main__":
     root = tk.Tk()
